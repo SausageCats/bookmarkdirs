@@ -121,9 +121,11 @@ _bookmarkdirs_add () {
 
 _bookmarkdirs_back () {
   if [ -n "$_bookmarkdirs_backtodir" ]; then
-    local movetodir=$_bookmarkdirs_backtodir
-    export _bookmarkdirs_backtodir=$PWD
-    cd $movetodir
+    local savedir=$_bookmarkdirs_backtodir
+    if [ $PWD != "$savedir" ]; then
+      _bookmarkdirs_backtodir=$PWD
+      cd $savedir
+    fi
   fi
 }
 
@@ -209,8 +211,10 @@ _bookmarkdirs_move () {
     if [ $name == $bmdname ]; then
       dir=$(echo $line | cut -d ' ' -f 2)
       if [ -d $dir ]; then
-        export _bookmarkdirs_backtodir=$PWD
-        eval "cd $dir"
+        if [ $PWD != $dir ]; then
+          _bookmarkdirs_backtodir=$PWD
+          cd $dir
+        fi
       else
         _bookmarkdirs_print_msg "No directory:$line"
       fi
