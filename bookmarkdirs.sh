@@ -5,16 +5,19 @@ declare -A bmd
 
 #
 # configs (begin)
+# bCC : dangerous command
 #
 bmd[bmdfile]=$HOME/.bookmarkdirs
 bmd[cmd_add]=ba
 bmd[cmd_back]=bb
+bmd[cmd_copy]=bCC
 bmd[cmd_delete]=bd
 bmd[cmd_edit]=be
 bmd[cmd_help]=bh
 bmd[cmd_move]=bm
 bmd[cmd_print]=bp
 bmd[cmd_remove]=
+bmd[cmd_save]=bs
 bmd[editor]=vi
 bmd[verbose]=1
 #
@@ -47,12 +50,14 @@ _bookmarkdirs_alias () {
   #
   [ -n "${bmd[cmd_add]}" ]    && eval "alias ${bmd[cmd_add]}=_bookmarkdirs_add"
   [ -n "${bmd[cmd_back]}" ]   && eval "alias ${bmd[cmd_back]}=_bookmarkdirs_back"
+  [ -n "${bmd[cmd_copy]}" ]   && eval "alias ${bmd[cmd_copy]}=_bookmarkdirs_copy"
   [ -n "${bmd[cmd_delete]}" ] && eval "alias ${bmd[cmd_delete]}=_bookmarkdirs_delete"
   [ -n "${bmd[cmd_edit]}" ]   && eval "alias ${bmd[cmd_edit]}=_bookmarkdirs_edit"
   [ -n "${bmd[cmd_help]}" ]   && eval "alias ${bmd[cmd_help]}=_bookmarkdirs_help"
   [ -n "${bmd[cmd_move]}" ]   && eval "alias ${bmd[cmd_move]}=_bookmarkdirs_move"
   [ -n "${bmd[cmd_print]}" ]  && eval "alias ${bmd[cmd_print]}=_bookmarkdirs_print"
   [ -n "${bmd[cmd_remove]}" ] && eval "alias ${bmd[cmd_remove]}=_bookmarkdirs_remove"
+  [ -n "${bmd[cmd_save]}" ]   && eval "alias ${bmd[cmd_save]}=_bookmarkdirs_save"
 
 }
 #  }}}
@@ -130,6 +135,35 @@ _bookmarkdirs_back () {
 }
 
 #  }}}
+# copy savelist to current directory (dangerous command) {{{
+
+_bookmarkdirs_copy () {
+  eval $(_bookmarkdirs_configs)
+  if [[ -z $_bookmarkdirs_savelist ]]; then
+    _bookmarkdirs_print_msg "No saved list"
+    return 1
+  fi
+  local saved_targetdir=$(echo $_bookmarkdirs_savelist | cut -f 1 -d '|')
+  local saved_list=$(echo $_bookmarkdirs_savelist | cut -f 2 -d '|')
+  local file_or_dir target
+  for file_or_dir in $saved_list; do
+    target=$saved_targetdir/$file_or_dir
+    if [ ! -e $target ]; then
+      echo No file or directory: $target
+      continue
+    elif [ -e $file_or_dir ]; then
+      echo Not copy: $target
+      continue
+    else
+       echo cp -r $target .
+            cp -r $target .
+    fi
+#    echo cp -ir $target .
+#         cp -ir $target .
+  done
+}
+
+#  }}}
 # delete bookmark {{{
 
 _bookmarkdirs_delete () {
@@ -165,14 +199,16 @@ _bookmarkdirs_help () {
   eval $(_bookmarkdirs_configs)
 
   local nrs=() msgs=()
-  [ -n "${bmd[cmd_add]}" ]    && { nrs+=($((${#bmd[cmd_add]}+13)));    msgs+=("$(echo ${bmd[cmd_add]}    \[name\]  \[dir\] SPACE\| add a bookmark                  )"); }
-  [ -n "${bmd[cmd_back]}" ]   && { nrs+=(${#bmd[cmd_back]});           msgs+=("$(echo ${bmd[cmd_back]}                     SPACE\| back to a previous directory    )"); }
-  [ -n "${bmd[cmd_delete]}" ] && { nrs+=($((${#bmd[cmd_delete]}+10))); msgs+=("$(echo ${bmd[cmd_delete]} \<name...\>       SPACE\| delete bookmarks                )"); }
-  [ -n "${bmd[cmd_edit]}" ]   && { nrs+=(${#bmd[cmd_edit]});           msgs+=("$(echo ${bmd[cmd_edit]}                     SPACE\| edit bookmarks                  )"); }
-  [ -n "${bmd[cmd_help]}" ]   && { nrs+=(${#bmd[cmd_help]});           msgs+=("$(echo ${bmd[cmd_help]}                     SPACE\| show this message               )"); }
-  [ -n "${bmd[cmd_move]}" ]   && { nrs+=($((${#bmd[cmd_move]}+7)));    msgs+=("$(echo ${bmd[cmd_move]}   \[name\]          SPACE\| move to a directory             )"); }
-  [ -n "${bmd[cmd_print]}" ]  && { nrs+=(${#bmd[cmd_print]});          msgs+=("$(echo ${bmd[cmd_print]}                    SPACE\| print bookmarks                 )"); }
-  [ -n "${bmd[cmd_remove]}" ] && { nrs+=(${#bmd[cmd_remove]});         msgs+=("$(echo ${bmd[cmd_remove]}                   SPACE\| remove the file:${bmd[bmdfile]} )"); }
+  [ -n "${bmd[cmd_add]}" ]    && { nrs+=($((${#bmd[cmd_add]}+13)));    msgs+=("$(echo ${bmd[cmd_add]}    \[name\]  \[dir\] SPACE\| Add a bookmark                  )"); }
+  [ -n "${bmd[cmd_back]}" ]   && { nrs+=(${#bmd[cmd_back]});           msgs+=("$(echo ${bmd[cmd_back]}                     SPACE\| Back to a previous directory    )"); }
+  [ -n "${bmd[cmd_copy]}" ]   && { nrs+=(${#bmd[cmd_copy]});           msgs+=("$(echo ${bmd[cmd_copy]}                     SPACE\| Copy to current directory       )"); }
+  [ -n "${bmd[cmd_delete]}" ] && { nrs+=($((${#bmd[cmd_delete]}+10))); msgs+=("$(echo ${bmd[cmd_delete]} \<name...\>       SPACE\| Delete bookmarks                )"); }
+  [ -n "${bmd[cmd_edit]}" ]   && { nrs+=(${#bmd[cmd_edit]});           msgs+=("$(echo ${bmd[cmd_edit]}                     SPACE\| Edit bookmarks                  )"); }
+  [ -n "${bmd[cmd_help]}" ]   && { nrs+=(${#bmd[cmd_help]});           msgs+=("$(echo ${bmd[cmd_help]}                     SPACE\| Show this message               )"); }
+  [ -n "${bmd[cmd_move]}" ]   && { nrs+=($((${#bmd[cmd_move]}+7)));    msgs+=("$(echo ${bmd[cmd_move]}   \[name\]          SPACE\| Move to a directory             )"); }
+  [ -n "${bmd[cmd_print]}" ]  && { nrs+=(${#bmd[cmd_print]});          msgs+=("$(echo ${bmd[cmd_print]}                    SPACE\| Print bookmarks                 )"); }
+  [ -n "${bmd[cmd_remove]}" ] && { nrs+=(${#bmd[cmd_remove]});         msgs+=("$(echo ${bmd[cmd_remove]}                   SPACE\| Remove the file:${bmd[bmdfile]} )"); }
+  [ -n "${bmd[cmd_save]}" ]   && { nrs+=($((${#bmd[cmd_save]}+10)));   msgs+=("$(echo ${bmd[cmd_save]}   \<name...\>       SPACE\| Save files and directories      )"); }
 
   local nr max_nr=0
   for nr in ${nrs[@]}; do
@@ -255,6 +291,27 @@ _bookmarkdirs_remove () {
 }
 
 #  }}}
+# save multiple files and directories {{{
+
+_bookmarkdirs_save () {
+  eval $(_bookmarkdirs_configs)
+  [ $# -eq 0 ] && _bookmarkdirs_check_cmdargs
+  for arg; do
+    [ -e $arg ] && { local file_or_dir_exists=1; break; }
+  done
+  if [ -z "$file_or_dir_exists" ]; then
+    _bookmarkdirs_print_msg "$@: No files and directories to save"
+    return 1
+  fi
+  if [[ $PWD =~ '|' ]]; then
+    _bookmarkdirs_print_msg "Cannot make a save list because a bar(|) is included in current path"
+    return 1
+  fi
+  _bookmarkdirs_savelist="$PWD|$@"
+  echo Save: $_bookmarkdirs_savelist
+}
+
+#  }}}
 #
 # sub functions
 #
@@ -295,9 +352,10 @@ _bookmarkdirs_check_cmdargs () {
 _bookmarkdirs_print_msg  () {
   if [ ${bmd[verbose]} -eq 1 ]; then
     if [ "$1" == "-n" ]; then
-      echo -n $2
+      shift
+      echo -n $@
     else
-      echo $1
+      echo $@
     fi
   fi
 }
