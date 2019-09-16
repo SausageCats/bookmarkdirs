@@ -7,7 +7,7 @@ declare -A bmd
 # configs (begin)
 # bCC : dangerous command
 #
-bmd[bmdfile]=$HOME/.bookmarkdirs
+bmd[bmdfile]=$HOME/.bookmarkdirs; [[ -L ${bmd[bmdfile]} ]] && bmd[bmdfile]=$(readlink ${bmd[bmdfile]})
 bmd[cmd_add]=ba
 bmd[cmd_back]=bb
 bmd[cmd_copy]=bCC
@@ -38,7 +38,7 @@ _bookmarkdirs_alias () {
 
   #
   # set competition
-  # "-o default" を加えると、ファイルも補完される
+  # complete file names with option "-o default"
   #
   shopt -s progcomp
   eval "complete -o default -F _bookmarkdirs_completion ${bmd[cmd_add]}"
@@ -63,7 +63,8 @@ _bookmarkdirs_alias () {
 #  }}}
 # complete a word at the first column in the bookmarkdirs {{{
 
-# bookmarkdirs file の１列目の文字列が補完対象になる
+# the bookmark name will be completed
+# the name corresponds to the first column in .bookmarkdirs
 _bookmarkdirs_completion () {
   [ -f ${bmd[bmdfile]} ] || return 0
   local curword=${COMP_WORDS[COMP_CWORD]}
@@ -76,12 +77,10 @@ _bookmarkdirs_completion () {
 
 _bookmarkdirs_get_bmdnames () {
   eval $(_bookmarkdirs_configs)
-  local line
-  local names=''
-  while read line; do
-    names="$names $(echo $line | cut -d ' ' -f 1)"
+  local line path names=''
+  while read name path; do
+    echo $name
   done < ${bmd[bmdfile]}
-  echo $names
 }
 
 #  }}}
@@ -95,30 +94,36 @@ _bookmarkdirs_alias
 
 _bookmarkdirs_add () {
   eval $(_bookmarkdirs_configs)
-  # bookmark ファイルの作成
   _bookmarkdirs_create_bmdfile
-  # 引数のチェック
-  local name=$1 dir=$2
+  local name=$1 path=$2
   if [ -z "$name" ]; then
+    # determine a bookmark name consisting of numbers
+    local path nrs=''
+    while read name path; do
+      [[ $name =~ [0-9]+ ]] || continue
+      nrs=$nrs' '$name
+    done < ${bmd[bmdfile]}
+    nrs=$nrs' '
     local i
-    local name_list=$(cat ${bmd[bmdfile]} | cut -d ' ' -f 1)
-    for((i=1;i<10000;i++)); do
-      [[ $(echo "$name_list" | grep "^$i$") ]] && continue
+    for((i=1; i<10000; i++)); do
+      [[ $nrs =~ " $i " ]] && continue
       name=$i
       break
     done
   fi
-  [ -n "$dir" ] && { dir=$(\cd $dir && pwd) || _bookmarkdirs_kill_process; } \
-                || dir=$PWD
-  # bookmark の削除
+  [ -n "$path" ] \
+    && { path=$(\cd $path && pwd) || _bookmarkdirs_kill_process; } \
+    || path=$PWD
+  # delete a bookmark name
   _bookmarkdirs_delete $name
-  # bookmark の追加
+  # add a bookmark name
   if [ -s ${bmd[bmdfile]} ]; then
-    sed -i "1i$name $dir" ${bmd[bmdfile]};
+    # FIXME: format
+    sed -i "1i$name $path" ${bmd[bmdfile]}
   else
-    echo "$name $dir" > ${bmd[bmdfile]};
+    echo "$name $path" > ${bmd[bmdfile]}
   fi
-  _bookmarkdirs_print_msg "Add: $name $dir"
+  _bookmarkdirs_print_msg "Add: $name $path"
 }
 
 #  }}}
@@ -169,7 +174,9 @@ _bookmarkdirs_copy () {
 _bookmarkdirs_delete () {
   eval $(_bookmarkdirs_configs)
   _bookmarkdirs_check_bmdfile
-  local names=$@
+  [[ -z $@ ]] \
+    && local names=$(read name path <<< $(head -1 ${bmd[bmdfile]}) && echo $name) \
+    || local names=$@
   [ -z "$names" ] && _bookmarkdirs_check_cmdargs
   local name matched number line
   while read name; do
@@ -235,29 +242,27 @@ _bookmarkdirs_move () {
   _bookmarkdirs_check_bmdfile
   local bmdname=$1
   if [ -z "$bmdname" ]; then
-    bmdname=$(head -1 ${bmd[bmdfile]} | cut -d ' ' -f 1)
+    bmdname=$(read name path <<< $(head -1 ${bmd[bmdfile]}) && echo $name)
     if [ -z "$bmdname" ]; then
-      _bookmarkdirs_print_msg "No bookmarks"
+      _bookmarkdirs_print_msg "Empty bookmark name"
       return 1
     fi
   fi
-  local line name dir
-  while read line; do
-    name=$(echo $line | cut -d ' ' -f 1)
+  local name path
+  while read name path; do
     if [ $name == $bmdname ]; then
-      dir=$(echo $line | cut -d ' ' -f 2)
-      if [ -d $dir ]; then
-        if [ $PWD != $dir ]; then
+      if [ -d $path ]; then
+        if [ $PWD != $path ]; then
           _bookmarkdirs_backtodir=$PWD
-          cd $dir
+          cd $path
         fi
       else
-        _bookmarkdirs_print_msg "No directory:$line"
+        _bookmarkdirs_print_msg "Directory does not exist: $path ($name)"
       fi
       return 0
     fi
   done < ${bmd[bmdfile]}
-  _bookmarkdirs_print_msg "Available names: $(_bookmarkdirs_get_bmdnames)"
+  _bookmarkdirs_print_msg "Available bookmark names: $(_bookmarkdirs_get_bmdnames)"
   return 1
 }
 
@@ -266,20 +271,14 @@ _bookmarkdirs_move () {
 _bookmarkdirs_print () {
   eval $(_bookmarkdirs_configs)
   _bookmarkdirs_check_bmdfile
-  local line name len_name max_len=0 dir dirs_exist
-  # bookmark name の最大文字数
-  while read line; do
-    name="$names $(echo $line | cut -d ' ' -f 1)"
-    len_name=$(echo ${#name}) # $name contains newline(\n), so if $name=a, then $len_name=2
-    [ $len_name -gt $max_len ] && max_len=$len_name
+  local name path maxlen_name=0
+  while read name path; do
+    [ ${#name} -gt $maxlen_name ] && maxlen_name=${#name}
   done < ${bmd[bmdfile]}
-  max_len=$((max_len-1))
-  # ディレクトリの存在確認と表示
-  local dir dir_exist
-  while read line; do
-    dir="$names $(echo $line | cut -d ' ' -f 2)"
-    [ -d $dir ] && dir_exist=o || dir_exist=x
-    printf "[%s]  %-$(echo ${max_len})s  %s\n" $(echo $dir_exist $line)
+  local path_exist
+  while read name path; do
+    [ -d $path ] && path_exist=o || path_exist=x
+    printf "[%s]  %-${maxlen_name}s  %s\n" $path_exist $name $path
   done < ${bmd[bmdfile]}
 }
 #  }}}
@@ -364,5 +363,4 @@ _bookmarkdirs_print_msg  () {
 
 
 
-# vim:fileencoding=utf-8
 # vim:foldmethod=marker
