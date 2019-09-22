@@ -34,7 +34,7 @@ Command&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;|Description
 :--|:--
 ba [name] [dir]  | Add a current directory or specified directory by the argument [dir] to a bookmark file with a bookmark name, which is automatically assigned when the argument [name] is omitted. The bookmark file is created at `$HOME/.bookmarkdirs` as default.
 bb               | Back to the previous directory.
-bCC              | (Dangerous command) Copy a saved list to the current directory. The list is created by bs command.
+bC               | Copy a saved list to the current directory. The list is created by bs command.
 bd \<name...\>   | Delete the bookmark names. Multiple names are accepted.
 be               | Edit the bookmark file.
 bh               | Show the help message.

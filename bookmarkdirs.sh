@@ -5,12 +5,12 @@ declare -A bmd
 
 #
 # configs (begin)
-# bCC : dangerous command
 #
-bmd[bmdfile]=$HOME/.bookmarkdirs; [[ -L ${bmd[bmdfile]} ]] && bmd[bmdfile]=$(readlink ${bmd[bmdfile]})
+bmd[bmdfile]=$HOME/.bookmarkdirs
+[[ -L "${bmd[bmdfile]}" ]] && bmd[bmdfile]=$(readlink "${bmd[bmdfile]}")
 bmd[cmd_add]=ba
 bmd[cmd_back]=bb
-bmd[cmd_copy]=bCC
+bmd[cmd_copy]=bC
 bmd[cmd_delete]=bd
 bmd[cmd_edit]=be
 bmd[cmd_help]=bh
@@ -38,12 +38,17 @@ _bookmarkdirs_alias () {
 
   #
   # set competition
-  # complete file names with option "-o default"
   #
-  shopt -s progcomp
-  eval "complete -o default -F _bookmarkdirs_completion ${bmd[cmd_add]}"
-  eval "complete            -F _bookmarkdirs_completion ${bmd[cmd_delete]}"
-  eval "complete            -F _bookmarkdirs_completion ${bmd[cmd_move]}"
+  if [ $ZSH_VERSION ]; then
+    eval "compctl -x 'p[1]' -K _bookmarkdirs_completion_zsh - 'p[2]' -/ -- _bookmarkdirs_add"
+    eval "compctl -K _bookmarkdirs_completion_zsh _bookmarkdirs_delete"
+    eval "compctl -x 'p[1]' -K _bookmarkdirs_completion_zsh -- _bookmarkdirs_move"
+  else
+    shopt -s progcomp
+    eval "complete -o dirnames -F _bookmarkdirs_completion ${bmd[cmd_add]}"
+    eval "complete             -F _bookmarkdirs_completion ${bmd[cmd_delete]}"
+    eval "complete             -F _bookmarkdirs_completion ${bmd[cmd_move]}"
+  fi
 
   #
   # set alias command
@@ -66,21 +71,26 @@ _bookmarkdirs_alias () {
 # the bookmark name will be completed
 # the name corresponds to the first column in .bookmarkdirs
 _bookmarkdirs_completion () {
-  [ -f ${bmd[bmdfile]} ] || return 0
+  eval $(_bookmarkdirs_configs)
+  [ -f "${bmd[bmdfile]}" ] || return 0
   local curword=${COMP_WORDS[COMP_CWORD]}
   COMPREPLY=($(compgen -W "$(_bookmarkdirs_get_bmdnames)" -- "$curword"))
   return 0
+}
+_bookmarkdirs_completion_zsh () {
+  eval $(_bookmarkdirs_configs)
+  [ -f "${bmd[bmdfile]}" ] || return 0
+  reply=("${(ps:\n:)$(_bookmarkdirs_get_bmdnames)}")
 }
 
 #  }}}
 # get bookmarkdirs names {{{
 
 _bookmarkdirs_get_bmdnames () {
-  eval $(_bookmarkdirs_configs)
-  local line path names=''
-  while read name path; do
-    echo $name
-  done < ${bmd[bmdfile]}
+  local name dpath
+  while read name dpath; do
+    echo "$name"
+  done < "${bmd[bmdfile]}"
 }
 
 #  }}}
@@ -95,35 +105,41 @@ _bookmarkdirs_alias
 _bookmarkdirs_add () {
   eval $(_bookmarkdirs_configs)
   _bookmarkdirs_create_bmdfile
-  local name=$1 path=$2
+
+  local name=$1 dpath=$2
+
   if [ -z "$name" ]; then
     # determine a bookmark name consisting of numbers
-    local path nrs=''
-    while read name path; do
-      [[ $name =~ [0-9]+ ]] || continue
+    local nrs=''
+    while read name dpath; do
+      [[ "$name" =~ [0-9]+ ]] || continue
       nrs=$nrs' '$name
-    done < ${bmd[bmdfile]}
+    done < "${bmd[bmdfile]}"
     nrs=$nrs' '
     local i
-    for((i=1; i<10000; i++)); do
-      [[ $nrs =~ " $i " ]] && continue
+    for ((i=1; i<10000; i++)); do
+      [[ "$nrs" =~ " $i " ]] && continue
       name=$i
       break
     done
   fi
-  [ -n "$path" ] \
-    && { path=$(\cd $path && pwd) || _bookmarkdirs_kill_process; } \
-    || path=$PWD
+
+  [ -n "$dpath" ] \
+    && { dpath=$(\cd "$dpath" 2>/dev/null && pwd ) || _bookmarkdirs_kill_process; } \
+    || dpath=$PWD
+
   # delete a bookmark name
-  _bookmarkdirs_delete $name
+  _bookmarkdirs_delete "$name"
+
   # add a bookmark name
-  if [ -s ${bmd[bmdfile]} ]; then
+  if [ -s "${bmd[bmdfile]}" ]; then
     # FIXME: format
-    sed -i "1i$name $path" ${bmd[bmdfile]}
+    sed -i "1i$name $dpath" "${bmd[bmdfile]}"
   else
-    echo "$name $path" > ${bmd[bmdfile]}
+    echo "$name $dpath" > "${bmd[bmdfile]}"
   fi
-  _bookmarkdirs_print_msg "Add: $name $path"
+
+  _bookmarkdirs_print_msg "Add: $name $dpath"
 }
 
 #  }}}
@@ -132,9 +148,9 @@ _bookmarkdirs_add () {
 _bookmarkdirs_back () {
   if [ -n "$_bookmarkdirs_backtodir" ]; then
     local savedir=$_bookmarkdirs_backtodir
-    if [ $PWD != "$savedir" ]; then
+    if [ "$PWD" != "$savedir" ]; then
       _bookmarkdirs_backtodir=$PWD
-      cd $savedir
+      cd "$savedir"
     fi
   fi
 }
@@ -144,27 +160,25 @@ _bookmarkdirs_back () {
 
 _bookmarkdirs_copy () {
   eval $(_bookmarkdirs_configs)
-  if [[ -z $_bookmarkdirs_savelist ]]; then
+  if [[ -z "$_bookmarkdirs_savelist" ]]; then
     _bookmarkdirs_print_msg "No saved list"
     return 1
   fi
-  local saved_targetdir=$(echo $_bookmarkdirs_savelist | cut -f 1 -d '|')
-  local saved_list=$(echo $_bookmarkdirs_savelist | cut -f 2 -d '|')
+  local saved_targetdir=$(echo "$_bookmarkdirs_savelist" | cut -f 1 -d '|')
+  local saved_list=$(echo "$_bookmarkdirs_savelist" | cut -f 2 -d '|')
   local file_or_dir target
-  for file_or_dir in $saved_list; do
+  for file_or_dir in "$saved_list"; do
     target=$saved_targetdir/$file_or_dir
     if [ ! -e $target ]; then
-      echo No file or directory: $target
+      echo No file or directory: "$target"
       continue
-    elif [ -e $file_or_dir ]; then
-      echo Not copy: $target
+    elif [ -e "$file_or_dir" ]; then
+      echo Not copy: "$target"
       continue
     else
-       echo cp -r $target .
-            cp -r $target .
+       echo cp -r "$target" .
+            cp -r "$target" .
     fi
-#    echo cp -ir $target .
-#         cp -ir $target .
   done
 }
 
@@ -174,20 +188,20 @@ _bookmarkdirs_copy () {
 _bookmarkdirs_delete () {
   eval $(_bookmarkdirs_configs)
   _bookmarkdirs_check_bmdfile
-  [[ -z $@ ]] \
-    && local names=$(read name path <<< $(head -1 ${bmd[bmdfile]}) && echo $name) \
+  [[ -z "$@" ]] \
+    && local names=$(read name dpath <<< $(head -1 "${bmd[bmdfile]}") && echo "$name") \
     || local names=$@
   [ -z "$names" ] && _bookmarkdirs_check_cmdargs
-  local name matched number line
+  local name matched line nr
   while read name; do
-    matched=$(grep -n "^$name " ${bmd[bmdfile]})
+    matched=$(\grep -hn "^$name" "${bmd[bmdfile]}")
     if [ -n "$matched" ]; then
-      number=$(echo $matched | cut -d ':' -f 1)
-      line=$(echo $matched | sed -e "s/^$number://")
+      line=${matched#*:}
+      nr=${matched%%:*}
       _bookmarkdirs_print_msg "Del: $line"
-      sed -i "${number}d" ${bmd[bmdfile]}
+      sed -i "${nr}d" "${bmd[bmdfile]}"
     fi
-  done < <(echo $names | sed -e 's/ /\n/g')
+  done < <(echo "$names" | sed -e 's/ /\n/g')
 }
 
 #  }}}
@@ -195,7 +209,7 @@ _bookmarkdirs_delete () {
 
 _bookmarkdirs_edit () {
   eval $(_bookmarkdirs_configs)
-  eval ${bmd[editor]} ${bmd[bmdfile]}
+  eval "${bmd[editor]}" "${bmd[bmdfile]}"
 }
 
 #  }}}
@@ -205,30 +219,30 @@ _bookmarkdirs_help () {
 
   eval $(_bookmarkdirs_configs)
 
-  local nrs=() msgs=()
-  [ -n "${bmd[cmd_add]}" ]    && { nrs+=($((${#bmd[cmd_add]}+13)));    msgs+=("$(echo ${bmd[cmd_add]}    \[name\]  \[dir\] SPACE\| Add a bookmark                  )"); }
-  [ -n "${bmd[cmd_back]}" ]   && { nrs+=(${#bmd[cmd_back]});           msgs+=("$(echo ${bmd[cmd_back]}                     SPACE\| Back to a previous directory    )"); }
-  [ -n "${bmd[cmd_copy]}" ]   && { nrs+=(${#bmd[cmd_copy]});           msgs+=("$(echo ${bmd[cmd_copy]}                     SPACE\| Copy to current directory       )"); }
-  [ -n "${bmd[cmd_delete]}" ] && { nrs+=($((${#bmd[cmd_delete]}+10))); msgs+=("$(echo ${bmd[cmd_delete]} \<name...\>       SPACE\| Delete bookmarks                )"); }
-  [ -n "${bmd[cmd_edit]}" ]   && { nrs+=(${#bmd[cmd_edit]});           msgs+=("$(echo ${bmd[cmd_edit]}                     SPACE\| Edit bookmarks                  )"); }
-  [ -n "${bmd[cmd_help]}" ]   && { nrs+=(${#bmd[cmd_help]});           msgs+=("$(echo ${bmd[cmd_help]}                     SPACE\| Show this message               )"); }
-  [ -n "${bmd[cmd_move]}" ]   && { nrs+=($((${#bmd[cmd_move]}+7)));    msgs+=("$(echo ${bmd[cmd_move]}   \[name\]          SPACE\| Move to a directory             )"); }
-  [ -n "${bmd[cmd_print]}" ]  && { nrs+=(${#bmd[cmd_print]});          msgs+=("$(echo ${bmd[cmd_print]}                    SPACE\| Print bookmarks                 )"); }
-  [ -n "${bmd[cmd_remove]}" ] && { nrs+=(${#bmd[cmd_remove]});         msgs+=("$(echo ${bmd[cmd_remove]}                   SPACE\| Remove the file:${bmd[bmdfile]} )"); }
-  [ -n "${bmd[cmd_save]}" ]   && { nrs+=($((${#bmd[cmd_save]}+10)));   msgs+=("$(echo ${bmd[cmd_save]}   \<name...\>       SPACE\| Save files and directories      )"); }
+  local chrs=() msgs=()
+  [ -n "${bmd[cmd_add]}" ]    && { chrs+=($((${#bmd[cmd_add]}+13)));    msgs+=("$(echo ${bmd[cmd_add]}    \[name\]  \[dir\] SPACE\| Add a bookmark                  )"); }
+  [ -n "${bmd[cmd_back]}" ]   && { chrs+=(${#bmd[cmd_back]});           msgs+=("$(echo ${bmd[cmd_back]}                     SPACE\| Back to a previous directory    )"); }
+  [ -n "${bmd[cmd_copy]}" ]   && { chrs+=(${#bmd[cmd_copy]});           msgs+=("$(echo ${bmd[cmd_copy]}                     SPACE\| Copy to the current directory   )"); }
+  [ -n "${bmd[cmd_delete]}" ] && { chrs+=($((${#bmd[cmd_delete]}+10))); msgs+=("$(echo ${bmd[cmd_delete]} \<name...\>       SPACE\| Delete bookmarks                )"); }
+  [ -n "${bmd[cmd_edit]}" ]   && { chrs+=(${#bmd[cmd_edit]});           msgs+=("$(echo ${bmd[cmd_edit]}                     SPACE\| Edit bookmarks                  )"); }
+  [ -n "${bmd[cmd_help]}" ]   && { chrs+=(${#bmd[cmd_help]});           msgs+=("$(echo ${bmd[cmd_help]}                     SPACE\| Show this message               )"); }
+  [ -n "${bmd[cmd_move]}" ]   && { chrs+=($((${#bmd[cmd_move]}+7)));    msgs+=("$(echo ${bmd[cmd_move]}   \[name\]          SPACE\| Move to a directory             )"); }
+  [ -n "${bmd[cmd_print]}" ]  && { chrs+=(${#bmd[cmd_print]});          msgs+=("$(echo ${bmd[cmd_print]}                    SPACE\| Print bookmarks                 )"); }
+  [ -n "${bmd[cmd_remove]}" ] && { chrs+=(${#bmd[cmd_remove]});         msgs+=("$(echo ${bmd[cmd_remove]}                   SPACE\| Remove the file:${bmd[bmdfile]} )"); }
+  [ -n "${bmd[cmd_save]}" ]   && { chrs+=($((${#bmd[cmd_save]}+10)));   msgs+=("$(echo ${bmd[cmd_save]}   \<name...\>       SPACE\| Save files and directories      )"); }
 
-  local nr max_nr=0
-  for nr in ${nrs[@]}; do
-    [ $nr -gt $max_nr ] && max_nr=$nr
+  local chr max_chrs=0
+  for chr in "${chrs[@]}"; do
+    [ "$chr" -gt "$max_chrs" ] && max_chrs=$chr
   done
 
-  local space i idx=0
-  for nr in ${nrs[@]}; do
+  [ $ZSH_VERSION ] && local space i idx=1 || local space i idx=0
+  for chr in "${chrs[@]}"; do
     space=
-    for((i=0;i<$((max_nr-nr));i++)); do
+    for ((i=0; i<$((max_chrs-chr)); i++)); do
       space+=' '
     done
-    echo ${msgs[$idx]} | sed -e "s/SPACE/$space/"
+    echo "${msgs[$idx]}" | sed -e "s/SPACE/$space/"
     idx=$((idx+1))
   done
 
@@ -242,26 +256,26 @@ _bookmarkdirs_move () {
   _bookmarkdirs_check_bmdfile
   local bmdname=$1
   if [ -z "$bmdname" ]; then
-    bmdname=$(read name path <<< $(head -1 ${bmd[bmdfile]}) && echo $name)
+    bmdname=$(read name dpath <<< $(head -1 "${bmd[bmdfile]}") && echo "$name")
     if [ -z "$bmdname" ]; then
       _bookmarkdirs_print_msg "Empty bookmark name"
       return 1
     fi
   fi
-  local name path
-  while read name path; do
-    if [ $name == $bmdname ]; then
-      if [ -d $path ]; then
-        if [ $PWD != $path ]; then
+  local name dpath
+  while read name dpath; do
+    if [ "$name" = "$bmdname" ]; then
+      if [ -d "$dpath" ]; then
+        if [ "$PWD" != "$dpath" ]; then
           _bookmarkdirs_backtodir=$PWD
-          cd $path
+          cd "$dpath"
         fi
       else
-        _bookmarkdirs_print_msg "Directory does not exist: $path ($name)"
+        _bookmarkdirs_print_msg "Directory does not exist: $dpath ($name)"
       fi
       return 0
     fi
-  done < ${bmd[bmdfile]}
+  done < "${bmd[bmdfile]}"
   _bookmarkdirs_print_msg "Available bookmark names: $(_bookmarkdirs_get_bmdnames)"
   return 1
 }
@@ -271,22 +285,22 @@ _bookmarkdirs_move () {
 _bookmarkdirs_print () {
   eval $(_bookmarkdirs_configs)
   _bookmarkdirs_check_bmdfile
-  local name path maxlen_name=0
-  while read name path; do
-    [ ${#name} -gt $maxlen_name ] && maxlen_name=${#name}
-  done < ${bmd[bmdfile]}
+  local name dpath maxlen_name=0
+  while read name dpath; do
+    [ "${#name}" -gt "$maxlen_name" ] && maxlen_name=${#name}
+  done < "${bmd[bmdfile]}"
   local path_exist
-  while read name path; do
-    [ -d $path ] && path_exist=o || path_exist=x
-    printf "[%s]  %-${maxlen_name}s  %s\n" $path_exist $name $path
-  done < ${bmd[bmdfile]}
+  while read name dpath; do
+    [ -d "$dpath" ] && path_exist=o || path_exist=x
+    printf "[%s]  %-${maxlen_name}s  %s\n" "$path_exist" "$name" "$dpath"
+  done < "${bmd[bmdfile]}"
 }
 #  }}}
 # remove bookmark {{{
 
 _bookmarkdirs_remove () {
   eval $(_bookmarkdirs_configs)
-  [ -f ${bmd[bmdfile]} ] && rm ${bmd[bmdfile]}
+  [ -f "${bmd[bmdfile]}" ] && rm "${bmd[bmdfile]}"
 }
 
 #  }}}
@@ -296,18 +310,14 @@ _bookmarkdirs_save () {
   eval $(_bookmarkdirs_configs)
   [ $# -eq 0 ] && _bookmarkdirs_check_cmdargs
   for arg; do
-    [ -e $arg ] && { local file_or_dir_exists=1; break; }
+    [ -e "$arg" ] && { local file_or_dir_exists=1; break; }
   done
   if [ -z "$file_or_dir_exists" ]; then
     _bookmarkdirs_print_msg "$@: No files and directories to save"
     return 1
   fi
-  if [[ $PWD =~ '|' ]]; then
-    _bookmarkdirs_print_msg "Cannot make a save list because a bar(|) is included in current path"
-    return 1
-  fi
   _bookmarkdirs_savelist="$PWD|$@"
-  echo Save: $_bookmarkdirs_savelist
+  echo Save: "$_bookmarkdirs_savelist"
 }
 
 #  }}}
@@ -317,7 +327,7 @@ _bookmarkdirs_save () {
 # check the bookmarkdirs file {{{
 
 _bookmarkdirs_check_bmdfile () {
-  if [ ! -f ${bmd[bmdfile]} ]; then
+  if [ ! -f "${bmd[bmdfile]}" ]; then
     _bookmarkdirs_print_msg -n "Bookmark file '${bmd[bmdfile]}' does not exist"
     _bookmarkdirs_kill_process
   fi
@@ -327,14 +337,14 @@ _bookmarkdirs_check_bmdfile () {
 # create the bookmarkdirs file {{{
 
 _bookmarkdirs_create_bmdfile () {
-  [ ! -f ${bmd[bmdfile]} ] && touch ${bmd[bmdfile]}
+  [ ! -f "${bmd[bmdfile]}" ] && touch "${bmd[bmdfile]}"
 }
 
 #  }}}
 # kill process {{{
 
 _bookmarkdirs_kill_process () {
-  kill -SIGINT $$
+  kill -SIGINT "$$"
 }
 
 #  }}}
@@ -348,19 +358,18 @@ _bookmarkdirs_check_cmdargs () {
 #  }}}
 # print message {{{
 
-_bookmarkdirs_print_msg  () {
-  if [ ${bmd[verbose]} -eq 1 ]; then
-    if [ "$1" == "-n" ]; then
+_bookmarkdirs_print_msg () {
+  if [ "${bmd[verbose]}" -eq 1 ]; then
+    if [ "$1" = "-n" ]; then
       shift
-      echo -n $@
+      echo -n "$@"
     else
-      echo $@
+      echo "$@"
     fi
   fi
 }
 
 #  }}}
-
 
 
 # vim:foldmethod=marker
