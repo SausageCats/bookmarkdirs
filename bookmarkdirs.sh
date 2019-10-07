@@ -167,9 +167,9 @@ _bookmarkdirs_copy () {
   local saved_targetdir=$(echo "$_bookmarkdirs_savelist" | cut -f 1 -d '|')
   local saved_list=$(echo "$_bookmarkdirs_savelist" | cut -f 2 -d '|')
   local file_or_dir target
-  for file_or_dir in "$saved_list"; do
+  for file_or_dir in $(eval echo "$saved_list"); do
     target=$saved_targetdir/$file_or_dir
-    if [ ! -e $target ]; then
+    if [ ! -e "$target" ]; then
       echo No file or directory: "$target"
       continue
     elif [ -e "$file_or_dir" ]; then
@@ -232,12 +232,12 @@ _bookmarkdirs_help () {
   [ -n "${bmd[cmd_save]}" ]   && { chrs+=($((${#bmd[cmd_save]}+10)));   msgs+=("$(echo ${bmd[cmd_save]}   \<name...\>       SPACE\| Save files and directories      )"); }
 
   local chr max_chrs=0
-  for chr in "${chrs[@]}"; do
+  for chr in ${chrs[@]}; do
     [ "$chr" -gt "$max_chrs" ] && max_chrs=$chr
   done
 
   [ $ZSH_VERSION ] && local space i idx=1 || local space i idx=0
-  for chr in "${chrs[@]}"; do
+  for chr in ${chrs[@]}; do
     space=
     for ((i=0; i<$((max_chrs-chr)); i++)); do
       space+=' '
